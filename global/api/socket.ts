@@ -4,6 +4,8 @@ import type { MessageDto } from './messages'
 
 export const SOCKET_PATH = '/ws'
 
+export type ActivityKind = 'idle' | 'typing' | 'recording' | 'uploading'
+
 export interface ServerToClientEvents {
 	'message:new': (msg: MessageDto) => void
 	'call:invite': (payload: CallInvite) => void
@@ -16,6 +18,7 @@ export interface ServerToClientEvents {
 	}) => void
 	'call:hangup': (payload: { callId: CallId; from: UserId }) => void
 	'call:unavailable': (payload: { reason: 'offline' | 'busy' }) => void
+	'activity:update': (payload: { from: UserId; activity: ActivityKind }) => void
 }
 
 export interface ClientToServerEvents {
@@ -24,4 +27,5 @@ export interface ClientToServerEvents {
 	'call:decline': (payload: { callId: CallId }) => void
 	'call:signal': (payload: { callId: CallId; signal: CallSignal }) => void
 	'call:hangup': (payload: { callId: CallId }) => void
+	'activity:set': (payload: { activity: ActivityKind }) => void
 }

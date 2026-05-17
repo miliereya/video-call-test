@@ -39,6 +39,19 @@ function partnerName(username: string): string {
 	return username === 'vika' ? 'Danil' : 'Vika'
 }
 
+function partnerStatus(activity: 'idle' | 'typing' | 'recording' | 'uploading'): string {
+	switch (activity) {
+		case 'typing':
+			return 'печатает…'
+		case 'recording':
+			return 'записывает голосовое…'
+		case 'uploading':
+			return 'отправляет файл…'
+		default:
+			return 'в сети'
+	}
+}
+
 function formatTime(iso: string): string {
 	const d = new Date(iso)
 	const hh = String(d.getHours()).padStart(2, '0')
@@ -314,7 +327,7 @@ export function ChatPage({ user, onLogout }: Props) {
 						<div className='chat__peer-name'>
 							{partner} <span aria-hidden>❤️</span>
 						</div>
-						<div className='chat__peer-status'>в сети</div>
+						<div className='chat__peer-status'>{partnerStatus(call.partnerActivity)}</div>
 					</div>
 				</div>
 				<div className='chat__actions'>

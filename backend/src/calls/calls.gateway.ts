@@ -12,6 +12,7 @@ import {
 import type { Server, Socket } from 'socket.io'
 import type { CallId, CallSignal } from '@global/api/call'
 import type {
+	ActivityKind,
 	ClientToServerEvents,
 	ServerToClientEvents,
 } from '@global/api/socket'
@@ -78,7 +79,25 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 				this.calls.delete(callId)
 			}
 		}
+		this.broadcastActivity(userId, 'idle')
 		this.logger.log(`User ${userId} disconnected`)
+	}
+
+	@SubscribeMessage('activity:set')
+	onActivitySet(
+		@ConnectedSocket() client: SocketType,
+		@MessageBody() payload: { activity: ActivityKind },
+	): void {
+		const from = client.data.userId as UserId | undefined
+		if (!from) return
+		this.broadcastActivity(from, payload.activity)
+	}
+
+	private broadcastActivity(from: UserId, activity: ActivityKind): void {
+		for (const [otherId, socketId] of this.userSockets.entries()) {
+			if (otherId === from) continue
+			this.server.to(socketId).emit('activity:update', { from, activity })
+		}
 	}
 
 	@SubscribeMessage('call:start')

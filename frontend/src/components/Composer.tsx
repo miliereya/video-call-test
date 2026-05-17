@@ -7,6 +7,7 @@ import {
 	type KeyboardEvent,
 } from 'react'
 import { signUpload, uploadToR2 } from '../api/files'
+import { useCall } from '../call-context'
 import { bytesToBase64, encryptBlob } from '../crypto'
 import { useEncryptionKey } from '../key-context'
 import { EmojiPicker } from './EmojiPicker'
@@ -56,8 +57,12 @@ function pickVoiceMime(): string {
 	return ''
 }
 
+const TYPING_IDLE_MS = 3000
+
 export function Composer({ onSend }: Props) {
 	const { key } = useEncryptionKey()
+	const { setMyActivity } = useCall()
+	const typingTimerRef = useRef<number | null>(null)
 	const [text, setText] = useState('')
 	const [recording, setRecording] = useState(false)
 	const [elapsed, setElapsed] = useState(0)
@@ -106,8 +111,25 @@ export function Composer({ onSend }: Props) {
 	useEffect(() => {
 		return () => {
 			streamRef.current?.getTracks().forEach((t) => t.stop())
+			if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current)
+			setMyActivity('idle')
 		}
-	}, [])
+	}, [setMyActivity])
+
+	function notifyTyping() {
+		setMyActivity('typing')
+		if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current)
+		typingTimerRef.current = window.setTimeout(() => {
+			setMyActivity('idle')
+		}, TYPING_IDLE_MS)
+	}
+
+	function clearTyping() {
+		if (typingTimerRef.current) {
+			window.clearTimeout(typingTimerRef.current)
+			typingTimerRef.current = null
+		}
+	}
 
 	useEffect(() => {
 		const url = stagedVoice?.previewUrl
@@ -151,6 +173,8 @@ export function Composer({ onSend }: Props) {
 		setUploading(true)
 		setProgress(0)
 		setError(null)
+		clearTyping()
+		setMyActivity('uploading')
 		try {
 			const mimeType =
 				staged.file.type ||
@@ -189,6 +213,7 @@ export function Composer({ onSend }: Props) {
 		} finally {
 			setUploading(false)
 			setProgress(0)
+			setMyActivity('idle')
 		}
 	}
 
@@ -201,6 +226,8 @@ export function Composer({ onSend }: Props) {
 		if (!hasText) return
 		onSend({ kind: 'text', text: text.trim() })
 		setText('')
+		clearTyping()
+		setMyActivity('idle')
 	}
 
 	function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -259,6 +286,8 @@ export function Composer({ onSend }: Props) {
 			recorderRef.current = recorder
 			recorder.start()
 			setRecording(true)
+			clearTyping()
+			setMyActivity('recording')
 		} catch (err) {
 			console.error('Mic error', err)
 			const name = (err as Error & { name?: string })?.name
@@ -289,6 +318,7 @@ export function Composer({ onSend }: Props) {
 			r.stop()
 		}
 		cleanupRecording()
+		setMyActivity('idle')
 	}
 
 	async function stopRecording() {
@@ -307,6 +337,7 @@ export function Composer({ onSend }: Props) {
 		})
 		const mimeType = blob.type || 'audio/webm'
 		cleanupRecording()
+		setMyActivity('idle')
 
 		if (blob.size === 0) return
 
@@ -327,6 +358,7 @@ export function Composer({ onSend }: Props) {
 		setUploading(true)
 		setProgress(0)
 		setError(null)
+		setMyActivity('uploading')
 		try {
 			const { iv, ciphertext } = await encryptBlob(key, stagedVoice.blob)
 			const cipher = new Blob([ciphertext], {
@@ -359,6 +391,7 @@ export function Composer({ onSend }: Props) {
 		} finally {
 			setUploading(false)
 			setProgress(0)
+			setMyActivity('idle')
 		}
 	}
 
@@ -509,7 +542,14 @@ export function Composer({ onSend }: Props) {
 					ref={textareaRef}
 					className='composer__input'
 					value={text}
-					onChange={(e) => setText(e.target.value)}
+					onChange={(e) => {
+						setText(e.target.value)
+						if (e.target.value.trim().length > 0) notifyTyping()
+						else {
+							clearTyping()
+							setMyActivity('idle')
+						}
+					}}
 					onKeyDown={handleKeyDown}
 					placeholder={staged ? 'Подпись (необязательно)' : 'Сообщение'}
 					rows={1}

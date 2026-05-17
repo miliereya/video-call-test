@@ -12,6 +12,7 @@ import { io, type Socket } from 'socket.io-client'
 import type { CallId, CallSignal, IceCandidateInit } from '@global/api/call'
 import { SOCKET_PATH } from '@global/api/socket'
 import type {
+	ActivityKind,
 	ClientToServerEvents,
 	ServerToClientEvents,
 } from '@global/api/socket'
@@ -39,12 +40,14 @@ interface CallControls {
 	remoteStream: MediaStream | null
 	micOn: boolean
 	camOn: boolean
+	partnerActivity: ActivityKind
 	startCall: (to: UserId) => Promise<void>
 	acceptCall: () => Promise<void>
 	declineCall: () => void
 	hangup: () => void
 	toggleMic: () => void
 	toggleCam: () => void
+	setMyActivity: (activity: ActivityKind) => void
 	dismissError: () => void
 }
 
@@ -123,11 +126,14 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 	const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
 	const [micOn, setMicOn] = useState(true)
 	const [camOn, setCamOn] = useState(true)
+	const [partnerActivity, setPartnerActivity] = useState<ActivityKind>('idle')
 
 	const socketRef = useRef<AppSocket | null>(null)
 	const pcRef = useRef<RTCPeerConnection | null>(null)
 	const pendingCandidatesRef = useRef<IceCandidateInit[]>([])
 	const localStreamRef = useRef<MediaStream | null>(null)
+	const lastActivityRef = useRef<ActivityKind>('idle')
+	const partnerActivityExpireRef = useRef<number | null>(null)
 
 	const cleanupCall = useCallback(() => {
 		pcRef.current?.close()
@@ -314,6 +320,12 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 
 	const dismissError = useCallback(() => setError(null), [])
 
+	const setMyActivity = useCallback((activity: ActivityKind) => {
+		if (lastActivityRef.current === activity) return
+		lastActivityRef.current = activity
+		socketRef.current?.emit('activity:set', { activity })
+	}, [])
+
 	useEffect(() => {
 		primeIceServers()
 		const backendUrl = (import.meta.env.VITE_BACKEND_URL ?? '').replace(
@@ -391,6 +403,20 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 			setState({ kind: 'idle' })
 		})
 
+		socket.on('activity:update', ({ activity }) => {
+			setPartnerActivity(activity)
+			if (partnerActivityExpireRef.current) {
+				window.clearTimeout(partnerActivityExpireRef.current)
+				partnerActivityExpireRef.current = null
+			}
+			if (activity !== 'idle') {
+				partnerActivityExpireRef.current = window.setTimeout(
+					() => setPartnerActivity('idle'),
+					8000,
+				)
+			}
+		})
+
 		socket.on('call:signal', async ({ callId, signal }) => {
 			try {
 				const pc = await ensurePeerConnection(callId)
@@ -444,12 +470,14 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 			remoteStream,
 			micOn,
 			camOn,
+			partnerActivity,
 			startCall,
 			acceptCall,
 			declineCall,
 			hangup,
 			toggleMic,
 			toggleCam,
+			setMyActivity,
 			dismissError,
 		}),
 		[
@@ -459,12 +487,14 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 			remoteStream,
 			micOn,
 			camOn,
+			partnerActivity,
 			startCall,
 			acceptCall,
 			declineCall,
 			hangup,
 			toggleMic,
 			toggleCam,
+			setMyActivity,
 			dismissError,
 		],
 	)
