@@ -1,0 +1,39 @@
+{
+  "name": "backend",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.717.0",
+    "@aws-sdk/s3-request-presigner": "^3.717.0",
+    "@global/shared": "*",
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.15",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/mongoose": "^10.1.0",
+    "@nestjs/platform-express": "^10.4.15",
+    "@nestjs/platform-socket.io": "^10.4.15",
+    "@nestjs/websockets": "^10.4.15",
+    "mongoose": "^8.9.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.9",
+    "@nestjs/schematics": "^10.2.3",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "ts-loader": "^9.5.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "tsconfig-paths-webpack-plugin": "^4.2.0",
+    "typescript": "^5.6.3"
+  }
+}

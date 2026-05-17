@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "outDir": "./dist",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": false,
+    "sourceMap": true,
+    "removeComments": true,
+    "incremental": true,
+    "isolatedModules": false,
+    "baseUrl": "..",
+    "paths": {
+      "@global": ["./global/index.ts"],
+      "@global/*": ["./global/*"]
+    }
+  },
+  "include": ["src/**/*", "../global/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

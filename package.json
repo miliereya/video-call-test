@@ -1,0 +1,23 @@
+{
+  "name": "video-call-test",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "global",
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run start:dev --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:up": "docker compose up -d mongo",
+    "db:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
