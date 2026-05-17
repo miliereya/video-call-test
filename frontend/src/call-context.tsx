@@ -70,11 +70,22 @@ function getMediaErrorMessage(err: unknown): string {
 
 const Ctx = createContext<CallControls | null>(null)
 
-const RTC_CONFIG: RTCConfiguration = {
-	iceServers: [
+function buildIceServers(): RTCIceServer[] {
+	const servers: RTCIceServer[] = [
 		{ urls: 'stun:stun.l.google.com:19302' },
 		{ urls: 'stun:stun1.l.google.com:19302' },
-		{
+	]
+	const turnUrl = import.meta.env.VITE_TURN_URL
+	const turnUsername = import.meta.env.VITE_TURN_USERNAME
+	const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL
+	if (turnUrl && turnUsername && turnCredential) {
+		servers.push({
+			urls: turnUrl.split(',').map((u) => u.trim()).filter(Boolean),
+			username: turnUsername,
+			credential: turnCredential,
+		})
+	} else {
+		servers.push({
 			urls: [
 				'turn:openrelay.metered.ca:80',
 				'turn:openrelay.metered.ca:443',
@@ -82,8 +93,13 @@ const RTC_CONFIG: RTCConfiguration = {
 			],
 			username: 'openrelayproject',
 			credential: 'openrelayproject',
-		},
-	],
+		})
+	}
+	return servers
+}
+
+const RTC_CONFIG: RTCConfiguration = {
+	iceServers: buildIceServers(),
 	iceCandidatePoolSize: 10,
 }
 
