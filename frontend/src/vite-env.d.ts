@@ -1,5 +1,15 @@
 /// <reference types="vite/client" />
 
+declare module '*.ogg' {
+	const src: string
+	export default src
+}
+
+declare module '*.ogg?url' {
+	const src: string
+	export default src
+}
+
 interface ImportMetaEnv {
 	readonly VITE_BACKEND_URL?: string
 	readonly VITE_TURN_URL?: string

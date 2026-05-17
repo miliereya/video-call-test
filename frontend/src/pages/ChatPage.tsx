@@ -4,6 +4,7 @@ import type {
 	MessageDto,
 	SendMessagePayload,
 } from '@global/api/messages'
+import notificationSoundUrl from '../public/audio_2026-05-18_01-32-56.ogg'
 import { signDownload } from '../api/files'
 import { listMessages, sendMessage, toggleReaction } from '../api/messages'
 import { useCall } from '../call-context'
@@ -182,6 +183,24 @@ interface LightboxState {
 }
 
 const POLL_INTERVAL_MS = 500
+const NOTIFICATION_THROTTLE_MS = 2000
+
+const notificationAudio =
+	typeof Audio !== 'undefined' ? new Audio(notificationSoundUrl) : null
+if (notificationAudio) {
+	notificationAudio.volume = 0.45
+	notificationAudio.preload = 'auto'
+}
+
+function playIncomingSound(): void {
+	if (!notificationAudio) return
+	try {
+		notificationAudio.currentTime = 0
+		void notificationAudio.play().catch(() => undefined)
+	} catch {
+		// ignore — browser may block until user interaction
+	}
+}
 
 export function ChatPage({ user, onLogout }: Props) {
 	const { key } = useEncryptionKey()
@@ -194,6 +213,8 @@ export function ChatPage({ user, onLogout }: Props) {
 	const scrollRef = useRef<HTMLDivElement>(null)
 	const itemsRef = useRef<ChatItem[]>([])
 	const urlMapRef = useRef<UrlMap>({})
+	const lastSoundAtRef = useRef(0)
+	const firstLoadRef = useRef(true)
 
 	const partner = useMemo(() => partnerName(user.username), [user.username])
 
@@ -218,7 +239,24 @@ export function ChatPage({ user, onLogout }: Props) {
 
 				const existingIds = new Set(itemsRef.current.map((i) => i.id))
 				const incoming = messages.filter((m) => !existingIds.has(m.id))
-				if (incoming.length === 0) return
+				if (incoming.length === 0) {
+					firstLoadRef.current = false
+					return
+				}
+
+				const fromPartner = incoming.some((m) => m.senderId !== user.id)
+				const tabHidden = document.visibilityState === 'hidden'
+				const now = Date.now()
+				if (
+					!firstLoadRef.current &&
+					fromPartner &&
+					tabHidden &&
+					now - lastSoundAtRef.current >= NOTIFICATION_THROTTLE_MS
+				) {
+					lastSoundAtRef.current = now
+					playIncomingSound()
+				}
+				firstLoadRef.current = false
 
 				const keysToSign = incoming
 					.filter(
