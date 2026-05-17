@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM node:22-alpine
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -13,19 +13,6 @@ COPY global ./global
 COPY backend ./backend
 
 RUN npm run build --workspace=backend
-
-FROM node:22-alpine AS prod
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-COPY backend/package.json ./backend/
-COPY frontend/package.json ./frontend/
-COPY global/package.json ./global/
-COPY global ./global
-
-RUN npm install --omit=dev
-
-COPY --from=builder /app/backend/dist ./backend/dist
 
 ENV NODE_ENV=production
 ENV PORT=3000
