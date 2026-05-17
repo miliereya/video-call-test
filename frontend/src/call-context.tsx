@@ -76,7 +76,7 @@ const MEDIA_CONSTRAINTS: MediaStreamConstraints = {
 	video: {
 		width: { ideal: 1920 },
 		height: { ideal: 1080 },
-		frameRate: { ideal: 60, min: 24 },
+		frameRate: { ideal: 144, min: 24 },
 		facingMode: 'user',
 	},
 	audio: {
@@ -87,8 +87,8 @@ const MEDIA_CONSTRAINTS: MediaStreamConstraints = {
 	},
 }
 
-const VIDEO_MAX_BITRATE = 8_000_000
-const VIDEO_MAX_FRAMERATE = 60
+const VIDEO_MAX_BITRATE = 15_000_000
+const VIDEO_MAX_FRAMERATE = 144
 
 async function applyVideoSenderParams(pc: RTCPeerConnection): Promise<void> {
 	for (const sender of pc.getSenders()) {

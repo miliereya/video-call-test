@@ -1170,6 +1170,7 @@ input {
   border-radius: 999px;
   color: white;
   font-size: 14px;
+  transition: opacity 220ms ease, transform 220ms ease;
 }
 
 .call-screen__topbar-name {
@@ -1212,6 +1213,31 @@ input {
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(10px);
   border-radius: 999px;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.call-screen__local {
+  transition: opacity 220ms ease;
+}
+
+.call-screen--hud-hidden {
+  cursor: none;
+}
+
+.call-screen--hud-hidden .call-screen__topbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -12px);
+}
+
+.call-screen--hud-hidden .call-screen__controls {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 12px);
+}
+
+.call-screen--hud-hidden .call-screen__local {
+  opacity: 0.35;
 }
 
 .call-screen__btn {

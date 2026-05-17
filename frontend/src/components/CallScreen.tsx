@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useCall } from '../call-context'
 import {
@@ -13,12 +13,23 @@ interface Props {
 	peerName: string
 }
 
+const HUD_HIDE_MOUSE_MS = 3000
+const HUD_HIDE_TOUCH_MS = 5000
+
 export function CallScreen({ peerName }: Props) {
 	const { state, localStream, remoteStream, micOn, camOn, hangup, toggleMic, toggleCam } =
 		useCall()
 	const localVideoRef = useRef<HTMLVideoElement>(null)
 	const remoteVideoRef = useRef<HTMLVideoElement>(null)
 	const [elapsed, setElapsed] = useState(0)
+	const [hudVisible, setHudVisible] = useState(true)
+	const hideTimerRef = useRef<number | null>(null)
+
+	const showHud = useCallback((ms: number) => {
+		setHudVisible(true)
+		if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current)
+		hideTimerRef.current = window.setTimeout(() => setHudVisible(false), ms)
+	}, [])
 
 	useEffect(() => {
 		if (localVideoRef.current && localStream) {
@@ -43,6 +54,33 @@ export function CallScreen({ peerName }: Props) {
 		return () => window.clearInterval(id)
 	}, [state])
 
+	useEffect(() => {
+		if (state.kind !== 'active') {
+			setHudVisible(true)
+			if (hideTimerRef.current) {
+				window.clearTimeout(hideTimerRef.current)
+				hideTimerRef.current = null
+			}
+			return
+		}
+		showHud(HUD_HIDE_MOUSE_MS)
+		const onMouseMove = () => showHud(HUD_HIDE_MOUSE_MS)
+		const onTouch = () => showHud(HUD_HIDE_TOUCH_MS)
+		const onKey = () => showHud(HUD_HIDE_MOUSE_MS)
+		document.addEventListener('mousemove', onMouseMove)
+		document.addEventListener('touchstart', onTouch, { passive: true })
+		document.addEventListener('keydown', onKey)
+		return () => {
+			document.removeEventListener('mousemove', onMouseMove)
+			document.removeEventListener('touchstart', onTouch)
+			document.removeEventListener('keydown', onKey)
+			if (hideTimerRef.current) {
+				window.clearTimeout(hideTimerRef.current)
+				hideTimerRef.current = null
+			}
+		}
+	}, [state.kind, showHud])
+
 	const subtitle =
 		state.kind === 'outgoing'
 			? 'Звоним…'
@@ -50,8 +88,15 @@ export function CallScreen({ peerName }: Props) {
 				? formatElapsed(elapsed)
 				: ''
 
+	const rootClass = [
+		'call-screen',
+		!hudVisible && state.kind === 'active' && 'call-screen--hud-hidden',
+	]
+		.filter(Boolean)
+		.join(' ')
+
 	return createPortal(
-		<div className='call-screen'>
+		<div className={rootClass}>
 			<div className='call-screen__remote'>
 				{remoteStream ? (
 					<video ref={remoteVideoRef} autoPlay playsInline />
