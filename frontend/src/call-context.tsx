@@ -71,7 +71,20 @@ function getMediaErrorMessage(err: unknown): string {
 const Ctx = createContext<CallControls | null>(null)
 
 const RTC_CONFIG: RTCConfiguration = {
-	iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+	iceServers: [
+		{ urls: 'stun:stun.l.google.com:19302' },
+		{ urls: 'stun:stun1.l.google.com:19302' },
+		{
+			urls: [
+				'turn:openrelay.metered.ca:80',
+				'turn:openrelay.metered.ca:443',
+				'turn:openrelay.metered.ca:443?transport=tcp',
+			],
+			username: 'openrelayproject',
+			credential: 'openrelayproject',
+		},
+	],
+	iceCandidatePoolSize: 10,
 }
 
 const MEDIA_CONSTRAINTS: MediaStreamConstraints = {
@@ -160,9 +173,20 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 			}
 			pc.ontrack = (ev) => {
 				const [stream] = ev.streams
+				console.log('[call] ontrack', ev.track.kind, 'streams:', ev.streams.length)
 				if (stream) setRemoteStream(stream)
 			}
+			pc.oniceconnectionstatechange = () => {
+				console.log('[call] iceConnectionState:', pc.iceConnectionState)
+			}
+			pc.onicegatheringstatechange = () => {
+				console.log('[call] iceGatheringState:', pc.iceGatheringState)
+			}
+			pc.onsignalingstatechange = () => {
+				console.log('[call] signalingState:', pc.signalingState)
+			}
 			pc.onconnectionstatechange = () => {
+				console.log('[call] connectionState:', pc.connectionState)
 				if (
 					pc.connectionState === 'failed' ||
 					pc.connectionState === 'closed'
