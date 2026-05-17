@@ -16,6 +16,7 @@ import type {
 	ServerToClientEvents,
 } from '@global/api/socket'
 import type { UserId } from '@global/types'
+import { getIceServers, primeIceServers } from './turn'
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -70,38 +71,6 @@ function getMediaErrorMessage(err: unknown): string {
 
 const Ctx = createContext<CallControls | null>(null)
 
-function buildIceServers(): RTCIceServer[] {
-	const servers: RTCIceServer[] = [
-		{ urls: 'stun:stun.l.google.com:19302' },
-		{ urls: 'stun:stun1.l.google.com:19302' },
-	]
-	const turnUrl = import.meta.env.VITE_TURN_URL
-	const turnUsername = import.meta.env.VITE_TURN_USERNAME
-	const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL
-	if (turnUrl && turnUsername && turnCredential) {
-		servers.push({
-			urls: turnUrl.split(',').map((u) => u.trim()).filter(Boolean),
-			username: turnUsername,
-			credential: turnCredential,
-		})
-	} else {
-		servers.push({
-			urls: [
-				'turn:openrelay.metered.ca:80',
-				'turn:openrelay.metered.ca:443',
-				'turn:openrelay.metered.ca:443?transport=tcp',
-			],
-			username: 'openrelayproject',
-			credential: 'openrelayproject',
-		})
-	}
-	return servers
-}
-
-const RTC_CONFIG: RTCConfiguration = {
-	iceServers: buildIceServers(),
-	iceCandidatePoolSize: 10,
-}
 
 const MEDIA_CONSTRAINTS: MediaStreamConstraints = {
 	video: {
@@ -173,9 +142,14 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 	}, [])
 
 	const ensurePeerConnection = useCallback(
-		(callId: CallId): RTCPeerConnection => {
+		async (callId: CallId): Promise<RTCPeerConnection> => {
 			if (pcRef.current) return pcRef.current
-			const pc = new RTCPeerConnection(RTC_CONFIG)
+			const iceServers = await getIceServers()
+			console.log('[call] iceServers:', iceServers)
+			const pc = new RTCPeerConnection({
+				iceServers,
+				iceCandidatePoolSize: 10,
+			})
 			pc.onicecandidate = (ev) => {
 				if (ev.candidate && socketRef.current) {
 					socketRef.current.emit('call:signal', {
@@ -341,6 +315,7 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 	const dismissError = useCallback(() => setError(null), [])
 
 	useEffect(() => {
+		primeIceServers()
 		const backendUrl = (import.meta.env.VITE_BACKEND_URL ?? '').replace(
 			/\/$/,
 			'',
@@ -382,7 +357,7 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 					: prev,
 			)
 			try {
-				const pc = ensurePeerConnection(callId)
+				const pc = await ensurePeerConnection(callId)
 				addLocalTracks(pc)
 				const offer = await pc.createOffer()
 				await pc.setLocalDescription(offer)
@@ -418,7 +393,7 @@ export function CallProvider({ token, currentUserId, children }: ProviderProps) 
 
 		socket.on('call:signal', async ({ callId, signal }) => {
 			try {
-				const pc = ensurePeerConnection(callId)
+				const pc = await ensurePeerConnection(callId)
 				if (signal.type === 'offer') {
 					addLocalTracks(pc)
 					await pc.setRemoteDescription({ type: 'offer', sdp: signal.sdp })
