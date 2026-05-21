@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common'
+import {
+	Body,
+	Controller,
+	Get,
+	Param,
+	Post,
+	Query,
+	UseGuards,
+} from '@nestjs/common'
 import type { SelfUser } from '@global/types'
 import type {
 	ListMessagesResponse,
@@ -17,9 +25,15 @@ export class MessagesController {
 	constructor(private readonly messages: MessagesService) {}
 
 	@Get()
-	async list(): Promise<ListMessagesResponse> {
-		const messages = await this.messages.list()
-		return { messages }
+	async list(
+		@Query('before') before?: string,
+		@Query('limit') limit?: string,
+	): Promise<ListMessagesResponse> {
+		const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined
+		const lim = Number.isFinite(parsedLimit) && (parsedLimit as number) > 0
+			? (parsedLimit as number)
+			: 100
+		return this.messages.list(lim, before)
 	}
 
 	@Post()

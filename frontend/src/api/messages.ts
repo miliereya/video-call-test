@@ -8,8 +8,16 @@ import type {
 } from '@global/api/messages'
 import { apiGet, apiPost } from './client'
 
-export function listMessages(): Promise<ListMessagesResponse> {
-	return apiGet<ListMessagesResponse>(ApiRoutes.messages.list)
+export function listMessages(opts?: {
+	before?: string
+	limit?: number
+}): Promise<ListMessagesResponse> {
+	const params = new URLSearchParams()
+	if (opts?.before) params.set('before', opts.before)
+	if (opts?.limit) params.set('limit', String(opts.limit))
+	const qs = params.toString()
+	const url = qs ? `${ApiRoutes.messages.list}?${qs}` : ApiRoutes.messages.list
+	return apiGet<ListMessagesResponse>(url)
 }
 
 export function sendMessage(

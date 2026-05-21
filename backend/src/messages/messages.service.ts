@@ -11,13 +11,33 @@ export class MessagesService {
 		private readonly model: Model<MessageDocument>,
 	) {}
 
-	async list(limit = 200): Promise<MessageDto[]> {
+	async list(
+		limit = 100,
+		before?: string,
+	): Promise<{ messages: MessageDto[]; hasMore: boolean }> {
+		const safeLimit = Math.max(1, Math.min(limit, 500))
+		const filter: Record<string, unknown> = {}
+		if (before) {
+			try {
+				const beforeDoc = (await this.model
+					.findById(before)
+					.lean()) as { createdAt?: Date } | null
+				if (beforeDoc?.createdAt) {
+					filter.createdAt = { $lt: beforeDoc.createdAt }
+				}
+			} catch {
+				// invalid id — ignore filter
+			}
+		}
 		const docs = await this.model
-			.find()
-			.sort({ createdAt: 1 })
-			.limit(limit)
+			.find(filter)
+			.sort({ createdAt: -1 })
+			.limit(safeLimit + 1)
 			.lean()
-		return docs.map((d) => this.toDto(d))
+		const hasMore = docs.length > safeLimit
+		const slice = hasMore ? docs.slice(0, safeLimit) : docs
+		const messages = slice.reverse().map((d) => this.toDto(d))
+		return { messages, hasMore }
 	}
 
 	async create(senderId: string, payload: SendMessagePayload): Promise<MessageDto> {

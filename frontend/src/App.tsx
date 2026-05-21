@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { logout as logoutApi } from './api/auth'
 import { CallProvider } from './call-context'
 import { KeyProvider } from './key-context'
+import { LazySignProvider } from './lazy-sign-context'
 import { ChatPage } from './pages/ChatPage'
 import { LoginPage } from './pages/LoginPage'
 import { clearSession, loadSession, saveSession, type Session } from './session'
@@ -32,7 +33,9 @@ export function App() {
 	return (
 		<KeyProvider>
 			<CallProvider token={session.token} currentUserId={session.user.id}>
-				<ChatPage user={session.user} onLogout={handleLogout} />
+				<LazySignProvider>
+					<ChatPage user={session.user} onLogout={handleLogout} />
+				</LazySignProvider>
 			</CallProvider>
 		</KeyProvider>
 	)

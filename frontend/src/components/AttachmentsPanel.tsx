@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useEncryptionKey } from '../key-context'
+import { useLazySign } from '../lazy-sign-context'
 import { useDecryptedUrl } from '../use-decrypted-url'
 import {
 	EyeIcon,
@@ -111,19 +112,37 @@ function MediaTile({
 	onOpen: (src: string) => void
 }) {
 	const { key } = useEncryptionKey()
+	const { urls, requestSign } = useLazySign()
+	const tileRef = useRef<HTMLButtonElement>(null)
+	const [revealed, setRevealed] = useState(false)
+
+	const src = item.storageKey ? urls[item.storageKey] ?? '' : ''
 	const decryptedUrl = useDecryptedUrl({
 		encrypted: item.encrypted,
-		src: item.src,
+		src,
 		iv: item.iv,
 		mimeType: item.mimeType,
 		key,
 	})
-	const effectiveSrc = item.encrypted ? decryptedUrl : item.src
+	const effectiveSrc = item.encrypted ? decryptedUrl : src
 	const locked = !!item.encrypted && !key
-	const [revealed, setRevealed] = useState(false)
 	const hidden = !!item.blurred && !revealed
 	const canOpen = !!effectiveSrc && !locked && !hidden
 	const showHideBtn = !!item.blurred && revealed && !locked
+
+	useEffect(() => {
+		if (!tileRef.current) return
+		if (!item.storageKey) return
+		const el = tileRef.current
+		const obs = new IntersectionObserver(
+			([entry]) => {
+				if (entry?.isIntersecting) requestSign(item.storageKey)
+			},
+			{ rootMargin: '300px' },
+		)
+		obs.observe(el)
+		return () => obs.disconnect()
+	}, [item.storageKey, requestSign])
 
 	function handleClick() {
 		if (locked) return
@@ -149,6 +168,7 @@ function MediaTile({
 
 	return (
 		<button
+			ref={tileRef}
 			type='button'
 			className={cls}
 			onClick={handleClick}
@@ -196,21 +216,38 @@ function MediaTile({
 
 function VoiceRow({ item }: { item: VoiceItem }) {
 	const { key } = useEncryptionKey()
+	const { urls, requestSign } = useLazySign()
 	const audioRef = useRef<HTMLAudioElement | null>(null)
+	const wrapRef = useRef<HTMLDivElement | null>(null)
 	const [playing, setPlaying] = useState(false)
 	const [current, setCurrent] = useState(0)
 
+	const src = item.storageKey ? urls[item.storageKey] ?? '' : ''
 	const decryptedUrl = useDecryptedUrl({
 		encrypted: item.encrypted,
-		src: item.src ?? '',
+		src,
 		iv: item.iv,
 		mimeType: item.mimeType,
 		key,
 	})
-	const effectiveSrc = item.encrypted ? decryptedUrl : item.src
+	const effectiveSrc = item.encrypted ? decryptedUrl : src
 	const locked = !!item.encrypted && !key
-	const loading = !!item.encrypted && !!key && !decryptedUrl
+	const loading = !!item.encrypted && !!key && !!item.storageKey && !decryptedUrl
 	const canPlay = !!effectiveSrc && !locked
+
+	useEffect(() => {
+		if (!wrapRef.current) return
+		if (!item.storageKey) return
+		const el = wrapRef.current
+		const obs = new IntersectionObserver(
+			([entry]) => {
+				if (entry?.isIntersecting) requestSign(item.storageKey!)
+			},
+			{ rootMargin: '300px' },
+		)
+		obs.observe(el)
+		return () => obs.disconnect()
+	}, [item.storageKey, requestSign])
 
 	function toggle() {
 		const a = audioRef.current
@@ -226,7 +263,10 @@ function VoiceRow({ item }: { item: VoiceItem }) {
 	const ss = String(display % 60).padStart(2, '0')
 
 	return (
-		<div className={`voice-row${item.author === 'me' ? ' voice-row--me' : ''}`}>
+		<div
+			ref={wrapRef}
+			className={`voice-row${item.author === 'me' ? ' voice-row--me' : ''}`}
+		>
 			<button
 				type='button'
 				className='voice-row__play'

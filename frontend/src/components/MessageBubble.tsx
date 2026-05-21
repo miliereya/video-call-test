@@ -1,5 +1,6 @@
-import { useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useEncryptionKey } from '../key-context'
+import { useLazySign } from '../lazy-sign-context'
 import { useDecryptedUrl } from '../use-decrypted-url'
 import { ReactionPicker } from './ReactionPicker'
 import {
@@ -30,7 +31,7 @@ export type ChatItem =
 	| (BaseItem & { kind: 'text'; text: string })
 	| (BaseItem & {
 			kind: 'image'
-			src: string
+			src?: string
 			storageKey: string
 			blurred?: boolean
 			caption?: string
@@ -40,7 +41,7 @@ export type ChatItem =
 	  })
 	| (BaseItem & {
 			kind: 'video'
-			src: string
+			src?: string
 			storageKey: string
 			blurred?: boolean
 			caption?: string
@@ -117,7 +118,7 @@ export function MessageBubble({
 					<>
 						<MediaBubble
 							kind={item.kind}
-							src={item.src}
+							storageKey={item.storageKey}
 							blurred={item.blurred}
 							encrypted={item.encrypted}
 							iv={item.iv}
@@ -132,7 +133,6 @@ export function MessageBubble({
 				{item.kind === 'voice' && (
 					<VoiceBubble
 						durationSec={item.durationSec}
-						src={item.src}
 						storageKey={item.storageKey}
 						encrypted={item.encrypted}
 						iv={item.iv}
@@ -198,7 +198,7 @@ function Reactions({
 
 function MediaBubble({
 	kind,
-	src,
+	storageKey,
 	blurred,
 	encrypted,
 	iv,
@@ -206,7 +206,7 @@ function MediaBubble({
 	onOpenMedia,
 }: {
 	kind: 'image' | 'video'
-	src: string
+	storageKey: string
 	blurred?: boolean
 	encrypted?: boolean
 	iv?: string
@@ -214,7 +214,11 @@ function MediaBubble({
 	onOpenMedia?: (kind: 'image' | 'video', src: string) => void
 }) {
 	const { key } = useEncryptionKey()
+	const { urls, requestSign } = useLazySign()
+	const wrapRef = useRef<HTMLDivElement>(null)
 	const [revealed, setRevealed] = useState(false)
+
+	const src = storageKey ? urls[storageKey] ?? '' : ''
 	const decryptedUrl = useDecryptedUrl({ encrypted, src, iv, mimeType, key })
 
 	const effectiveSrc = encrypted ? decryptedUrl : src
@@ -223,6 +227,20 @@ function MediaBubble({
 	const hidden = !!blurred && !revealed
 	const showHideBtn = !!blurred && revealed && !locked
 	const canOpen = !!effectiveSrc && !hidden && !locked
+
+	useEffect(() => {
+		if (!wrapRef.current) return
+		if (!storageKey) return
+		const el = wrapRef.current
+		const obs = new IntersectionObserver(
+			([entry]) => {
+				if (entry?.isIntersecting) requestSign(storageKey)
+			},
+			{ rootMargin: '400px' },
+		)
+		obs.observe(el)
+		return () => obs.disconnect()
+	}, [storageKey, requestSign])
 
 	function handleClick() {
 		if (hidden) {
@@ -248,6 +266,7 @@ function MediaBubble({
 
 	return (
 		<div
+			ref={wrapRef}
 			className={wrapClass}
 			onClick={handleClick}
 			role={hidden || canOpen ? 'button' : undefined}
@@ -305,27 +324,28 @@ function MediaBubble({
 
 function VoiceBubble({
 	durationSec,
-	src,
 	storageKey,
 	encrypted,
 	iv,
 	mimeType,
 }: {
 	durationSec: number
-	src?: string
 	storageKey?: string
 	encrypted?: boolean
 	iv?: string
 	mimeType?: string
 }) {
 	const { key } = useEncryptionKey()
+	const { urls, requestSign } = useLazySign()
 	const audioRef = useRef<HTMLAudioElement | null>(null)
+	const wrapRef = useRef<HTMLDivElement | null>(null)
 	const [playing, setPlaying] = useState(false)
 	const [current, setCurrent] = useState(0)
 
+	const src = storageKey ? urls[storageKey] ?? '' : ''
 	const decryptedUrl = useDecryptedUrl({
 		encrypted,
-		src: src ?? '',
+		src,
 		iv,
 		mimeType,
 		key,
@@ -334,6 +354,20 @@ function VoiceBubble({
 	const locked = !!encrypted && !!storageKey && !key
 	const loading = !!encrypted && !!key && !!storageKey && !decryptedUrl
 	const canPlay = !!storageKey && !!effectiveSrc
+
+	useEffect(() => {
+		if (!wrapRef.current) return
+		if (!storageKey) return
+		const el = wrapRef.current
+		const obs = new IntersectionObserver(
+			([entry]) => {
+				if (entry?.isIntersecting) requestSign(storageKey)
+			},
+			{ rootMargin: '400px' },
+		)
+		obs.observe(el)
+		return () => obs.disconnect()
+	}, [storageKey, requestSign])
 
 	function togglePlay() {
 		const a = audioRef.current
@@ -348,7 +382,7 @@ function VoiceBubble({
 	const display = playing && current > 0 ? Math.floor(current) : durationSec
 
 	return (
-		<div className='voice'>
+		<div className='voice' ref={wrapRef}>
 			<button
 				type='button'
 				className='voice__play'

@@ -270,7 +270,14 @@ input {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
+}
+
+.chat__loading-older {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  color: var(--fg-muted);
 }
 
 /* Message bubbles */

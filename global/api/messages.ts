@@ -39,8 +39,14 @@ export interface SendMessageResponse {
 	message: MessageDto
 }
 
+export interface ListMessagesQuery {
+	before?: string
+	limit?: number
+}
+
 export interface ListMessagesResponse {
 	messages: MessageDto[]
+	hasMore: boolean
 }
 
 export interface ToggleReactionPayload {

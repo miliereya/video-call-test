@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type UIEvent,
+} from 'react'
 import type { SelfUser } from '@global/types'
 import type {
 	MessageDto,
@@ -28,19 +35,20 @@ import {
 	type ChatItemDraft,
 } from '../components/MessageBubble'
 import { useEncryptionKey } from '../key-context'
+import { useLazySign } from '../lazy-sign-context'
 
 interface Props {
 	user: SelfUser
 	onLogout: () => void
 }
 
-type UrlMap = Record<string, string>
-
 function partnerName(username: string): string {
 	return username === 'vika' ? 'Danil' : 'Vika'
 }
 
-function partnerStatus(activity: 'idle' | 'typing' | 'recording' | 'uploading'): string {
+function partnerStatus(
+	activity: 'idle' | 'typing' | 'recording' | 'uploading',
+): string {
 	switch (activity) {
 		case 'typing':
 			return 'печатает…'
@@ -60,11 +68,7 @@ function formatTime(iso: string): string {
 	return `${hh}:${mm}`
 }
 
-function toChatItem(
-	m: MessageDto,
-	currentUserId: string,
-	urlMap: UrlMap,
-): ChatItem {
+function toChatItem(m: MessageDto, currentUserId: string): ChatItem {
 	const author = m.senderId === currentUserId ? 'me' : 'them'
 	const time = formatTime(m.createdAt)
 	const reactions = m.reactions
@@ -85,7 +89,6 @@ function toChatItem(
 				time,
 				kind: 'image',
 				storageKey: m.attachmentUrl ?? '',
-				src: urlMap[m.attachmentUrl ?? ''] ?? '',
 				blurred: m.blurred,
 				caption: m.text,
 				encrypted: m.encrypted,
@@ -100,7 +103,6 @@ function toChatItem(
 				time,
 				kind: 'video',
 				storageKey: m.attachmentUrl ?? '',
-				src: urlMap[m.attachmentUrl ?? ''] ?? '',
 				blurred: m.blurred,
 				caption: m.text,
 				encrypted: m.encrypted,
@@ -116,7 +118,6 @@ function toChatItem(
 				kind: 'voice',
 				durationSec: m.durationSec ?? 0,
 				storageKey: m.attachmentUrl,
-				src: m.attachmentUrl ? urlMap[m.attachmentUrl] : undefined,
 				encrypted: m.encrypted,
 				iv: m.attachmentIv,
 				mimeType: m.mimeType,
@@ -177,6 +178,19 @@ function toPayload(draft: ChatItemDraft): SendMessagePayload {
 	}
 }
 
+function mediaKeysOf(messages: MessageDto[]): string[] {
+	const out: string[] = []
+	for (const m of messages) {
+		if (
+			(m.kind === 'image' || m.kind === 'video' || m.kind === 'voice') &&
+			m.attachmentUrl
+		) {
+			out.push(m.attachmentUrl)
+		}
+	}
+	return out
+}
+
 interface LightboxState {
 	kind: 'image' | 'video'
 	src: string
@@ -184,6 +198,9 @@ interface LightboxState {
 
 const POLL_INTERVAL_MS = 500
 const NOTIFICATION_THROTTLE_MS = 2000
+const PAGE_SIZE = 100
+const INITIAL_MEDIA_SIGN = 15
+const SCROLL_TOP_TRIGGER = 120
 
 const notificationAudio =
 	typeof Audio !== 'undefined' ? new Audio(notificationSoundUrl) : null
@@ -198,23 +215,28 @@ function playIncomingSound(): void {
 		notificationAudio.currentTime = 0
 		void notificationAudio.play().catch(() => undefined)
 	} catch {
-		// ignore — browser may block until user interaction
+		// browser may block until user interaction — ignore
 	}
 }
 
 export function ChatPage({ user, onLogout }: Props) {
 	const { key } = useEncryptionKey()
 	const call = useCall()
+	const { primeUrls } = useLazySign()
+
 	const [items, setItems] = useState<ChatItem[]>([])
-	const [urlMap, setUrlMap] = useState<UrlMap>({})
 	const [lightbox, setLightbox] = useState<LightboxState | null>(null)
 	const [keyDialogOpen, setKeyDialogOpen] = useState(false)
 	const [attachmentsOpen, setAttachmentsOpen] = useState(false)
+	const [loadingOlder, setLoadingOlder] = useState(false)
+
 	const scrollRef = useRef<HTMLDivElement>(null)
 	const itemsRef = useRef<ChatItem[]>([])
-	const urlMapRef = useRef<UrlMap>({})
+	const hasMoreRef = useRef(true)
+	const lastItemIdRef = useRef<string | null>(null)
 	const lastSoundAtRef = useRef(0)
 	const firstLoadRef = useRef(true)
+	const loadingOlderRef = useRef(false)
 
 	const partner = useMemo(() => partnerName(user.username), [user.username])
 
@@ -223,8 +245,8 @@ export function ChatPage({ user, onLogout }: Props) {
 	}, [items])
 
 	useEffect(() => {
-		urlMapRef.current = urlMap
-	}, [urlMap])
+		loadingOlderRef.current = loadingOlder
+	}, [loadingOlder])
 
 	useEffect(() => {
 		let cancelled = false
@@ -234,21 +256,31 @@ export function ChatPage({ user, onLogout }: Props) {
 			if (cancelled || inFlight) return
 			inFlight = true
 			try {
-				const { messages } = await listMessages()
+				const { messages, hasMore } = await listMessages({ limit: PAGE_SIZE })
 				if (cancelled) return
 
 				const existingIds = new Set(itemsRef.current.map((i) => i.id))
 				const incoming = messages.filter((m) => !existingIds.has(m.id))
-				if (incoming.length === 0) {
+
+				if (firstLoadRef.current) {
+					hasMoreRef.current = hasMore
+					const latestKeys = mediaKeysOf(messages).slice(-INITIAL_MEDIA_SIGN)
+					if (latestKeys.length > 0) {
+						const { urls } = await signDownload(latestKeys)
+						if (cancelled) return
+						primeUrls(urls)
+					}
+					setItems(messages.map((m) => toChatItem(m, user.id)))
 					firstLoadRef.current = false
 					return
 				}
+
+				if (incoming.length === 0) return
 
 				const fromPartner = incoming.some((m) => m.senderId !== user.id)
 				const tabHidden = document.visibilityState === 'hidden'
 				const now = Date.now()
 				if (
-					!firstLoadRef.current &&
 					fromPartner &&
 					tabHidden &&
 					now - lastSoundAtRef.current >= NOTIFICATION_THROTTLE_MS
@@ -256,36 +288,19 @@ export function ChatPage({ user, onLogout }: Props) {
 					lastSoundAtRef.current = now
 					playIncomingSound()
 				}
-				firstLoadRef.current = false
 
-				const keysToSign = incoming
-					.filter(
-						(m) =>
-							(m.kind === 'image' ||
-								m.kind === 'video' ||
-								m.kind === 'voice') &&
-							!!m.attachmentUrl,
-					)
-					.map((m) => m.attachmentUrl as string)
-					.filter((k) => !(k in urlMapRef.current))
-
-				const newUrls =
-					keysToSign.length > 0
-						? (await signDownload(keysToSign)).urls
-						: {}
-				if (cancelled) return
-
-				const mergedMap = { ...urlMapRef.current, ...newUrls }
-				if (Object.keys(newUrls).length > 0) setUrlMap(mergedMap)
+				const incomingKeys = mediaKeysOf(incoming)
+				if (incomingKeys.length > 0) {
+					const { urls } = await signDownload(incomingKeys)
+					if (cancelled) return
+					primeUrls(urls)
+				}
 
 				setItems((prev) => {
 					const have = new Set(prev.map((i) => i.id))
 					const stillNew = incoming.filter((m) => !have.has(m.id))
 					if (stillNew.length === 0) return prev
-					return [
-						...prev,
-						...stillNew.map((m) => toChatItem(m, user.id, mergedMap)),
-					]
+					return [...prev, ...stillNew.map((m) => toChatItem(m, user.id))]
 				})
 			} catch (err) {
 				console.error('Poll failed', err)
@@ -301,18 +316,69 @@ export function ChatPage({ user, onLogout }: Props) {
 			cancelled = true
 			window.clearInterval(interval)
 		}
-	}, [user.id])
+	}, [user.id, primeUrls])
 
 	useEffect(() => {
 		const el = scrollRef.current
-		if (!el) return
-		el.scrollTop = el.scrollHeight
+		if (!el || items.length === 0) return
+		const lastItem = items[items.length - 1]
+		if (!lastItem) return
+		if (lastItemIdRef.current === lastItem.id) return
+		if (lastItemIdRef.current === null) {
+			el.scrollTop = el.scrollHeight
+		} else {
+			const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+			if (distanceFromBottom < 200) el.scrollTop = el.scrollHeight
+		}
+		lastItemIdRef.current = lastItem.id
 	}, [items])
+
+	const loadOlder = useCallback(async () => {
+		if (loadingOlderRef.current || !hasMoreRef.current) return
+		const oldest = itemsRef.current[0]
+		if (!oldest) return
+		const el = scrollRef.current
+		const prevHeight = el?.scrollHeight ?? 0
+		const prevTop = el?.scrollTop ?? 0
+
+		setLoadingOlder(true)
+		try {
+			const { messages, hasMore } = await listMessages({
+				before: oldest.id,
+				limit: PAGE_SIZE,
+			})
+			hasMoreRef.current = hasMore
+			if (messages.length === 0) return
+
+			setItems((prev) => {
+				const ids = new Set(prev.map((i) => i.id))
+				const fresh = messages.filter((m) => !ids.has(m.id))
+				if (fresh.length === 0) return prev
+				return [...fresh.map((m) => toChatItem(m, user.id)), ...prev]
+			})
+
+			requestAnimationFrame(() => {
+				const next = scrollRef.current
+				if (!next) return
+				next.scrollTop = next.scrollHeight - prevHeight + prevTop
+			})
+		} catch (err) {
+			console.error('Load older failed', err)
+		} finally {
+			setLoadingOlder(false)
+		}
+	}, [user.id])
+
+	function handleScroll(e: UIEvent<HTMLDivElement>) {
+		const el = e.currentTarget
+		if (el.scrollTop <= SCROLL_TOP_TRIGGER) {
+			void loadOlder()
+		}
+	}
 
 	async function handleSend(draft: ChatItemDraft) {
 		try {
 			const { message } = await sendMessage(toPayload(draft))
-			let nextMap = urlMap
 			if (
 				(draft.kind === 'image' ||
 					draft.kind === 'video' ||
@@ -320,12 +386,11 @@ export function ChatPage({ user, onLogout }: Props) {
 				draft.storageKey &&
 				draft.src
 			) {
-				nextMap = { ...urlMap, [draft.storageKey]: draft.src }
-				setUrlMap(nextMap)
+				primeUrls({ [draft.storageKey]: draft.src })
 			}
 			setItems((prev) => {
 				if (prev.some((p) => p.id === message.id)) return prev
-				return [...prev, toChatItem(message, user.id, nextMap)]
+				return [...prev, toChatItem(message, user.id)]
 			})
 		} catch (err) {
 			console.error('Failed to send', err)
@@ -365,7 +430,9 @@ export function ChatPage({ user, onLogout }: Props) {
 						<div className='chat__peer-name'>
 							{partner} <span aria-hidden>❤️</span>
 						</div>
-						<div className='chat__peer-status'>{partnerStatus(call.partnerActivity)}</div>
+						<div className='chat__peer-status'>
+							{partnerStatus(call.partnerActivity)}
+						</div>
 					</div>
 				</div>
 				<div className='chat__actions'>
@@ -406,7 +473,12 @@ export function ChatPage({ user, onLogout }: Props) {
 				</div>
 			</header>
 
-			<div className='chat__list' ref={scrollRef}>
+			<div className='chat__list' ref={scrollRef} onScroll={handleScroll}>
+				{loadingOlder && (
+					<div className='chat__loading-older'>
+						<span className='spinner spinner--sm' />
+					</div>
+				)}
 				{items.map((item) => (
 					<MessageBubble
 						key={item.id}
@@ -428,9 +500,7 @@ export function ChatPage({ user, onLogout }: Props) {
 				/>
 			)}
 
-			{keyDialogOpen && (
-				<KeyDialog onClose={() => setKeyDialogOpen(false)} />
-			)}
+			{keyDialogOpen && <KeyDialog onClose={() => setKeyDialogOpen(false)} />}
 
 			{attachmentsOpen && (
 				<AttachmentsPanel
